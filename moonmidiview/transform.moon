@@ -41,7 +41,7 @@ transformtrack = (track) ->
 
 	for evt in track\values!
 		time += evt.deltat
-		if evt.type == 0xff and evt.meta == 51
+		if evt.type == 0xff and evt.meta == 0x51
 			uspqn evt.uspqn
 		else
 			hi = rshift evt.type, 4

@@ -9,7 +9,7 @@ OPTS =
 	notewidth: 3
 	linesperframe: 2
 	visibleframes: 103
-OPTS = preset: '1080p'
+OPTS = preset: '720p'
 
 -- read stuff
 filename = ...

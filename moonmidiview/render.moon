@@ -64,12 +64,6 @@ getkeyboardcolor = (note, colors) ->
 
 dooptions = (opts={}) ->
 	switch opts.preset
-		when '1080p'
-			opts.linesperframe = 15
-			opts.notewidth = floor 1920 / 128
-			opts.keyboardheight = 60
-			opts.fps = 60
-			opts.visibleframes = floor (1080-60) / 15
 		when '72p'
 			opts.linesperframe = 2
 			opts.notewidth = 1
@@ -82,6 +76,18 @@ dooptions = (opts={}) ->
 			opts.keyboardheight = 16
 			opts.fps = 60
 			opts.visibleframes = floor (144-16) / 4
+		when '720p'
+			opts.linesperframe = 10
+			opts.notewidth = 10
+			opts.keyboardheight = 40
+			opts.fps = 60
+			opts.visibleframes = floor (720-40) / 10
+		when '1080p'
+			opts.linesperframe = 15
+			opts.notewidth = 15
+			opts.keyboardheight = 60
+			opts.fps = 60
+			opts.visibleframes = floor (1080-60) / 15
 
 	opts.linesperframe = LINESPERFRAME if opts.linesperframe == nil
 	opts.colors = COLORS if opts.colors == nil
@@ -185,7 +191,7 @@ mkvideo = (data, opts, filename) ->
 		img\get note*notewidth, frame*linesperframe
 
 	height = linesperframe * visibleframes + keyboardheight
-	fd = assert io.popen "ffmpeg -r 60 -pix_fmt rgb24 -s #{width}x#{height} -c:v rawvideo -f image2pipe -frame_size #{width*height*3} -i - -vf vflip '#{filename}'", 'w'
+	fd = assert io.popen "ffmpeg -r 60 -pix_fmt rgb24 -s #{width}x#{height} -c:v rawvideo -f image2pipe -frame_size #{width*height*3} -i - -vf vflip -r 60 '#{filename}'", 'w'
 	for i=0, numframes-1
 		offset = i * oneframe + 1
 		io.stderr\write "video frame #{i}/#{numframes-1}/#{i/(numframes-1)*100}% -> bytes #{offset-1}-#{offset+framelen-1} (#{framelen})/ #{#img}\n"
