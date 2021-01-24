@@ -65,11 +65,11 @@ getkeyboardcolor = (note, colors) ->
 dooptions = (opts={}) ->
 	switch opts.preset
 		when '1080p'
-			opts.linesperframe = 8
+			opts.linesperframe = 15
 			opts.notewidth = floor 1920 / 128
 			opts.keyboardheight = 60
 			opts.fps = 60
-			opts.visibleframes = floor (1080-60) / 8
+			opts.visibleframes = floor (1080-60) / 15
 		when '72p'
 			opts.linesperframe = 2
 			opts.notewidth = 1
