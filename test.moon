@@ -2,7 +2,7 @@
 import p from require 'moon'
 parse = require 'moonmidiview.parse'
 transform = require 'moonmidiview.transform'
-import linewise, video from require 'moonmidiview.render'
+import mkvideo from require 'moonmidiview.render'
 
 -- options
 OPTS =
@@ -24,20 +24,6 @@ midi = parse data
 trans = transform midi
 after = os.time!
 
--- image
---image = linewise trans, OPTS
---import img, width, height from image
---fd = io.open 'test.rgb', 'wb'
---fd\write img
---fd\close!
---fd = io.open 'test.size', 'w'
---fd\write "#{width}x#{height}\n"
---fd\close!
-
--- video
---os.remove 'test.mp4'
---video = video image, OPTS, 'test.mp4'
---import filename, width, height, framelen from video
-
+-- build
 os.remove 'test.mp4'
-video trans, OPTS, 'test.mp4'
+mkvideo trans, OPTS, 'test.mp4'

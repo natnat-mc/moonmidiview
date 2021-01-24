@@ -89,6 +89,7 @@ getactivenotes = (data) ->
 					note: evt.note
 					begintick: tick
 					begintime: time
+					velocity: evt.velocity
 				ni = notes\push note
 				insert runningnotes, ni
 			elseif evt.type == NOTEOFF

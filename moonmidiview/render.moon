@@ -1,5 +1,6 @@
 import band, rshift, lshift from bit32 or bit or require 'moonmidiview.bit'
 import image from require 'moonmidiview.ffi'
+import hsv2srgb, srgb2hsv from require 'moonmidiview.color'
 import char, byte, sub, rep from string
 import floor, ceil, max, huge from math
 import concat from table
@@ -13,6 +14,8 @@ BGCOLOR = '000'
 VISIBLEFRAMES = 60
 KEYBOARDHEIGHT = 10
 GRADIENT = true
+QUANTIZE = true
+HOLLOW = false
 
 hextable = {(tostring i), i for i=0, 9}
 hextable.a = 10
@@ -89,6 +92,10 @@ dooptions = (opts={}) ->
 	opts.keyboardheight = KEYBOARDHEIGHT if opts.keyboardheight == nil
 	opts.keyboardcolors = KEYBOARDCOLORS if opts.keyboardcolors == nil
 	opts.gradient = GRADIENT if opts.gradient == nil
+	opts.quantize = QUANTIZE if opts.quantize == nil
+	opts.hollow = HOLLOW if opts.hollow == nil
+
+	opts.hollow = false if opts.gradient
 
 	opts.colors = [decodecolor c for c in *opts.colors]
 	opts.bgcolor = decodecolor opts.bgcolor
@@ -96,66 +103,71 @@ dooptions = (opts={}) ->
 
 	opts
 
-linewise = (data, opts) ->
-	import linesperframe, colors, notewidth, fps, bgcolor, gradient from dooptions opts
-	firstframe = 0
-	lastframe = (framecount data, fps)
-
-	collectgarbage!
-	collectgarbage!
-
-	img = image 128*notewidth, linesperframe*(lastframe-firstframe+1)
-	putl = (l, frame) ->
-		for j=1, linesperframe
-			for i=0, 128*notewidth-1
-				img\putt i, frame*linesperframe+j-1, l[i]
-
-	lastref = 1
-	for frame=firstframe, lastframe
-		line = {i, bgcolor for i=0, 128*notewidth-1}
-		nnotes = 0
-		begintime = frame * 1e6 / fps
-		endtime = (frame+1) * 1e6 / fps
-
-		local firsttick, lasttick, ticks
-		do
-			ref = lastref
-			prev = lastref
-			while (data.times[data.ticks[ref]] or huge) <= begintime
-				prev = ref
-				ref += 1
-			firsttick = data.ticks[prev]
-			lastref = prev
-			while (data.times[data.ticks[ref]] or huge) < endtime
-				prev = ref
-				ref += 1
-			lasttick = data.ticks[prev]
-			ticks = [data.ticks[i] for i=lastref, prev]
-
-		for tick in *ticks
-			for notei in *data.activenotes[tick]
-				nnotes += 1
-				note = data.notes\get notei
-				color = colors[note.channel % #colors + 1]
-				line[note.note*notewidth+i] = color for i=0, notewidth-1
-				--TODO gradient
-			time = data.times[data.ticks[data.ticksrev[tick] + 1]]
-		io.stderr\write "linewise frame #{frame}/#{lastframe}/#{frame/lastframe*100}% -> ticks #{firsttick}-#{lasttick} -> #{nnotes} notes\n"
-		putl line, frame
-		if frame%1000 == 0
-			collectgarbage!
-			collectgarbage!
-
-	img\compile!
-	numframes = lastframe - firstframe + 1
-	width = notewidth * 128
+mkimage = (data, opts) ->
+	import linesperframe, colors, notewidth, fps, bgcolor, gradient, quantize, hollow from dooptions opts
+	numframes = framecount data, fps
+	lasttime = data.times[data.ticks[#data.ticks]] + floor 1000/fps - 1
+	firsttime = 0
 	height = numframes * linesperframe
+	width = 128 * notewidth
+
+	gradient = false if notewidth < 3
+
+	collectgarbage!
+	collectgarbage!
+
+	img = image width, height
+	for note in data.notes\values!
+		import note, begintime, endtime, channel from note
+		beginy = floor begintime / lasttime * height
+		endy = if quantize
+			deltat = endtime - begintime
+			len = floor deltat * height / lasttime
+			if len==0
+				beginy
+			else
+				beginy + len - 1
+		else
+			floor endtime / lasttime * height
+		beginx = note * notewidth
+		endx = beginx + notewidth - 1
+		color = colors[channel % #colors + 1]
+
+		if hollow or gradient
+			for y=beginy, endy
+				img\putt beginx, y, color
+			if notewidth > 1
+				for y=beginy, endy
+					img\putt endx, y, color
+			for x=beginx, endx
+				img\putt x, beginy, color
+				img\putt x, endy, color
+			if gradient
+				beginy += 1
+				beginx += 1
+				endx -= 1
+				endy -= 1
+				clen = endy - beginy + 1
+				if beginy <= endy
+					{sr, sg, sb} = color
+					h, s, v = srgb2hsv sr, sg, sb
+					for i=0, clen-1
+						pct = i / clen / 2 + .25
+						sr, sg, sb = hsv2srgb h, pct, 1-pct
+						for x=beginx, endx
+							img\put x, beginy+i, sr, sg, sb
+		else
+			for x=beginx, endx
+				for y=beginy, endy
+					img\putt x, y, color
+	img\compile!
+
 	{ :img, :numframes, :width, :height }
 
-video = (data, opts, filename) ->
+mkvideo = (data, opts, filename) ->
 	freeimg = false
 	if (type data) == 'table' and data.activenotes
-		data = linewise data, opts
+		data = mkimage data, opts
 		freeimg = true
 	elseif (type data) != 'table' or not data.img
 		error "Wrong format for data"
@@ -206,6 +218,6 @@ video = (data, opts, filename) ->
 	{ :filename, :numframes, :width, :height, :framelen }
 
 {
-	:linewise
-	:video
+	:dooptions
+	:mkimage, :mkvideo
 }

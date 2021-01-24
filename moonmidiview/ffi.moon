@@ -38,7 +38,9 @@ image = do
 	import char, byte from string
 	class
 		new: (@w, @h) =>
-			@data = setmetatable {}, __index: => char 0, 0, 0
+			@data = {}
+			z = char 0, 0, 0
+			@data[i] = z for i=1, @w*@h
 		put: (x, y, r, g, b) =>
 			i = y*@w+x+1
 			@data[i] = char r, g, b
@@ -46,12 +48,16 @@ image = do
 			{r, g, b} = rgb
 			@put x, y, r, g, b
 		get: (x, y) =>
+			byte @data[y*@w+x+1], 1, 3
+		get_compiled: (x, y) =>
 			i = (y*@w+x)*3 + 1
 			byte @data, i, i+2
 		sub: (st, len) =>
 			@data\sub st, st+len-1
 		compile: =>
+			return if (type @data) == 'string'
 			@data = table.concat @data, '', 1, @w*@h
+			@get = @get_compiled
 		free: =>
 
 pcall ->
@@ -114,6 +120,7 @@ pcall ->
 			uint32_t endtime;
 			uint32_t channel;
 			uint8_t note;
+			uint8_t velocity;
 		}
 	]]
 
@@ -133,7 +140,7 @@ pcall ->
 				@alloc = 0
 				@buf = nil
 			__gc: =>
-				@__gc!
+				@free!
 
 			push: (e) =>
 				if @len == @alloc
@@ -191,7 +198,11 @@ pcall ->
 				ffi.string @data+(st-1), len
 			compile: =>
 			free: =>
+				return if @data == nil
 				C.free @data
+				@data = nil
+			__gc: =>
+				@free!
 
 	io.stderr\write "Using ffi types\n"
 
