@@ -1,5 +1,8 @@
 import sub, byte from string
 import lshift, rshift, band, tohex from bit32 or bit or require 'moonmidiview.bit'
+import midiparseevt, buffertype from require 'moonmidiview.ffi'
+
+evtbuf = buffertype 'midiparseevt_t'
 
 tohex or= do
 	hextable = {[0]: '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'}
@@ -64,18 +67,17 @@ tohex or= do
 		header.tpqn = division
 
 	for track=1, header.tracks
-		events = {}
+		events = evtbuf!
 
-		eventi = 1
-		event = (deltat, etype, evt) ->
+		event = (deltat, etype, evt={}) ->
 			evt.deltat = deltat
 			evt.type = etype
-			events[eventi], eventi = evt, eventi + 1
+			events\push evt
 			nevts += 1
 			-- (require 'moon').p {:pos, :evt}
-		meta = (deltat, mtype, evt) ->
+		meta = (deltat, mtype, evt={}) ->
 			evt.meta = mtype
-			event deltat, 0xff, evt
+			event deltat, 0xff, midiparseevt evt
 
 		checkr "MTrk"
 		len = read32!
@@ -88,53 +90,69 @@ tohex or= do
 			etype = read8!
 			etypehi = rshift etype, 4
 			if etype == 0xf0 or etype == 0xf7
-				event deltat, etype, sysex: reads readvlen!
+				skip readvlen!
+				event deltat, etype--, sysex: reads readvlen!
 			elseif etype == 0xff
 				mtype = read8!
 				mlen = readvlen!
 				if mtype == 0x00
-					meta deltat, mtype, seqnum: read16!
+					skip 2
+					meta deltat, mtype--, seqnum: read16!
 				elseif mtype == 0x01
-					meta deltat, mtype, text: reads mlen
+					skip mlen
+					meta deltat, mtype--, text: reads mlen
 				elseif mtype == 0x02
-					meta deltat, mtype, copyright: reads mlen
+					skip mlen
+					meta deltat, mtype--, copyright: reads mlen
 				elseif mtype == 0x03
-					meta deltat, mtype, name: reads mlen
+					skip mlen
+					meta deltat, mtype--, name: reads mlen
 				elseif mtype == 0x04
-					meta deltat, mtype, instrument: reads mlen
+					skip mlen
+					meta deltat, mtype--, instrument: reads mlen
 				elseif mtype == 0x05
-					meta deltat, mtype, lyric: reads mlen
+					skip mlen
+					meta deltat, mtype--, lyric: reads mlen
 				elseif mtype == 0x2f
-					meta deltat, mtype, end: true
+					skip mlen
+					meta deltat, mtype--, end: true
 				elseif mtype == 0x51
 					meta deltat, mtype, uspqn: read24!
 				elseif mtype == 0x58
-					meta deltat, mtype, timesig: {readb 4}
+					skip mlen
+					meta deltat, mtype--, timesig: {readb 4}
 				else
-					meta deltat, mtype, unknown: reads mlen
+					skip mlen
+					meta deltat, mtype--, unknown: reads mlen
 			elseif etypehi == 0x8 or etypehi == 0x9 or etypehi == 0xa
 				event deltat, etype, note: read8!, val: read8!
 			elseif etypehi == 0xb
-				event deltat, etype, controller: read8!, val: read8!
+				skip 2
+				event deltat, etype--, controller: read8!, val: read8!
 			elseif etypehi == 0xc
-				event deltat, etype, program: read8!
+				skip 1
+				event deltat, etype--, program: read8!
 			elseif etypehi == 0xd
-				event deltat, etype, val: read8!
+				skip 1
+				event deltat, etype--, val: read8!
 			elseif etypehi == 0xe
-				event deltat, etype, val: (lshift read8!, 7) + read8!
+				skip 2
+				event deltat, etype--, val: (lshift read8!, 7) + read8!
 			else
 				fail "Unknown event, type 0x#{tohex etype}" unless lastetype
 				lastetypehi = rshift lastetype, 4
 				if lastetypehi == 0x8 or lastetypehi == 0x9 or lastetypehi == 0xa
 					event deltat, lastetype, note: etype, val: read8!
 				elseif lastetypehi == 0xb
-					event deltat, lastetype, controller: etype, val: read8!
+					skip 1
+					event deltat, lastetype--, controller: etype, val: read8!
 				elseif lastetypehi == 0xc
-					event deltat, lastetype, program: etype
+					event deltat, lastetype--, program: etype
 				elseif lastetypehi == 0xd
-					event deltat, lastetype, val: etype
+					event deltat, lastetype--, val: etype
 				elseif lastetypehi == 0xe
-					event deltat, lastetype, val: (lshift etype, 7) + read8!
+					skip 1
+					event deltat, lastetype--, val: (lshift etype, 7) + read8!
 				else
 					fail "Unsupported non-legit event #{tohex etype} after #{tohex lastetype}"
 				etype = lastetype

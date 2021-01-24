@@ -1,45 +1,48 @@
 import band, rshift, lshift from bit32 or bit or require 'moonmidiview.bit'
+import NOTEON, NOTEOFF, USPQN, miditransevt, miditransnote, buffertype from require 'moonmidiview.ffi'
 import insert, remove, sort from table
 import floor from math
+
+evtbuf = buffertype 'miditransevt_t'
+notebuf = buffertype 'miditransote_t'
 
 merge = (tracks) ->
 	evts = {}
 	nevts = 0
 	for tracki=1, #tracks
 		track = tracks[tracki]
-		for evt in *track
+		for evt in track\values!
 			import time from evt
-			evts[time] or= {}
+			evts[time] or= evtbuf!
 			evt.track = tracki - 1
-			insert evts[time], evt
+			evts[time]\push evt
 			nevts += 1
+		track\free!
 
 	io.stderr\write "#{nevts} events merged\n"
-
 	evts
 
 transformtrack = (track) ->
-	evts, i = {}, 1
+	evts = evtbuf!
 	time = 0
+	local note, uspqn
 	note = (note, channel, velocity, on) ->
-		i, evts[i] = i + 1, {
-			type: on and 'noteon' or 'noteoff'
+		evts\push miditransevt
+			type: on and NOTEON or NOTEOFF
 			:time
 			:note
 			:channel
 			:velocity
-		}
 	uspqn = (uspqn) ->
-		i, evts[i] = i + 1, {
-			type: 'uspqn'
+		evts\push miditransevt
+			type: USPQN
 			:time
 			:uspqn
-		}
 
-	for evt in *track
+	for evt in track\values!
 		time += evt.deltat
-		if val = evt.uspqn
-			uspqn val
+		if evt.type == 0xff and evt.meta == 51
+			uspqn evt.uspqn
 		else
 			hi = rshift evt.type, 4
 			lo = band evt.type, 0xf
@@ -48,8 +51,8 @@ transformtrack = (track) ->
 			elseif hi == 0x8
 				note evt.note, lo, 0, false
 
-	io.stderr\write "#{i-1} events kept\n"
-
+	io.stderr\write "#{evts.len} events kept\n"
+	track\free!
 	evts
 
 tickstotimes = (merged) ->
@@ -64,9 +67,9 @@ tickstotimes = (merged) ->
 		times[tick] = lasttime
 		timesrev[lasttime] = tick
 		alltimes[i], i = lasttime, i + 1
-		for evt in *evts[tick]
-			if uspqn = evt.uspqn
-				uspt = uspqn / tpqn
+		for evt in evts[tick]\values!
+			if evt.type == USPQN
+				uspt = evt.uspqn / tpqn
 	merged.times = times
 	merged.timesrev = timesrev
 	merged.alltimes = alltimes
@@ -76,24 +79,23 @@ getactivenotes = (data) ->
 	import ticks, evts, times from data
 	runningnotes = {}
 	activenotes = {}
-	notes, ni = {}, 1
+	notes = notebuf!
 	for tick in *ticks
 		time = times[tick]
-		for evt in *evts[tick]
-			if evt.type == 'noteon'
-				note =
+		for evt in evts[tick]\values!
+			if evt.type == NOTEON
+				note = miditransnote
 					channel: evt.channel + evt.track * 16
 					note: evt.note
 					begintick: tick
 					begintime: time
-				notes[ni] = note
+				ni = notes\push note
 				insert runningnotes, ni
-				ni += 1
-			elseif evt.type == 'noteoff'
+			elseif evt.type == NOTEOFF
 				channel = evt.channel + evt.track * 16
 				local i
 				for _i, _v in ipairs runningnotes
-					v = notes[_v]
+					v = notes\get _v
 					if v.channel == channel and v.note == evt.note
 						v.endtick = tick
 						v.endtime = time
@@ -103,7 +105,7 @@ getactivenotes = (data) ->
 	error "Active notes at end of data" if #runningnotes != 0
 	data.activenotes = activenotes
 	data.notes = notes
-	io.stderr\write "#{#data.notes} total notes\n"
+	io.stderr\write "#{notes.len} total notes\n"
 
 (midi) ->
 	import tracks from midi
@@ -115,6 +117,9 @@ getactivenotes = (data) ->
 	data = {:ticks, :ticksrev, :evts, :tpqn}
 	tickstotimes data
 	getactivenotes data
+	evtp\free! for _, evtp in pairs evts
 	data.evts = nil
 	data.tpqn = nil
+	collectgarbage()
+	collectgarbage()
 	data

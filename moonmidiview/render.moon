@@ -1,4 +1,5 @@
 import band, rshift, lshift from bit32 or bit or require 'moonmidiview.bit'
+import image from require 'moonmidiview.ffi'
 import char, byte, sub, rep from string
 import floor, ceil, max, huge from math
 import concat from table
@@ -61,11 +62,23 @@ getkeyboardcolor = (note, colors) ->
 dooptions = (opts={}) ->
 	switch opts.preset
 		when '1080p'
-			opts.linesperframe = 4
+			opts.linesperframe = 8
 			opts.notewidth = floor 1920 / 128
 			opts.keyboardheight = 60
 			opts.fps = 60
-			opts.visibleframes = floor (1080-60) / 4
+			opts.visibleframes = floor (1080-60) / 8
+		when '72p'
+			opts.linesperframe = 2
+			opts.notewidth = 1
+			opts.keyboardheight = 8
+			opts.fps = 60
+			opts.visibleframes = floor (72-8) / 2
+		when '144p'
+			opts.linesperframe = 4
+			opts.notewidth = 2
+			opts.keyboardheight = 16
+			opts.fps = 60
+			opts.visibleframes = floor (144-16) / 4
 
 	opts.linesperframe = LINESPERFRAME if opts.linesperframe == nil
 	opts.colors = COLORS if opts.colors == nil
@@ -85,20 +98,18 @@ dooptions = (opts={}) ->
 
 linewise = (data, opts) ->
 	import linesperframe, colors, notewidth, fps, bgcolor, gradient from dooptions opts
-
-	buf, i = {}, 1
-	put = (r, g, b) ->
-		buf[i], i = (char r, g, b), i + 1
-	putt = (t) ->
-		{r, g, b} = t
-		put r, g, b
-	putl = (l) ->
-		for i=1, linesperframe
-			for i=0, 128*notewidth-1
-				putt l[i]
-
 	firstframe = 0
 	lastframe = (framecount data, fps)
+
+	collectgarbage!
+	collectgarbage!
+
+	img = image 128*notewidth, linesperframe*(lastframe-firstframe+1)
+	putl = (l, frame) ->
+		for j=1, linesperframe
+			for i=0, 128*notewidth-1
+				img\putt i, frame*linesperframe+j-1, l[i]
+
 	lastref = 1
 	for frame=firstframe, lastframe
 		line = {i, bgcolor for i=0, 128*notewidth-1}
@@ -120,39 +131,46 @@ linewise = (data, opts) ->
 				ref += 1
 			lasttick = data.ticks[prev]
 			ticks = [data.ticks[i] for i=lastref, prev]
-		io.stderr\write "linewise frame #{frame}/#{lastframe}/#{frame/lastframe*100}% -> ticks #{firsttick}-#{lasttick}\n"
 
 		for tick in *ticks
 			for notei in *data.activenotes[tick]
 				nnotes += 1
-				note = data.notes[notei]
+				note = data.notes\get notei
 				color = colors[note.channel % #colors + 1]
 				line[note.note*notewidth+i] = color for i=0, notewidth-1
 				--TODO gradient
 			time = data.times[data.ticks[data.ticksrev[tick] + 1]]
-		putl line
+		io.stderr\write "linewise frame #{frame}/#{lastframe}/#{frame/lastframe*100}% -> ticks #{firsttick}-#{lasttick} -> #{nnotes} notes\n"
+		putl line, frame
+		if frame%1000 == 0
+			collectgarbage!
+			collectgarbage!
 
-	img = concat buf
+	img\compile!
 	numframes = lastframe - firstframe + 1
 	width = notewidth * 128
 	height = numframes * linesperframe
 	{ :img, :numframes, :width, :height }
 
 video = (data, opts, filename) ->
+	freeimg = false
 	if (type data) == 'table' and data.activenotes
 		data = linewise data, opts
+		freeimg = true
 	elseif (type data) != 'table' or not data.img
 		error "Wrong format for data"
 	import visibleframes, linesperframe, notewidth, keyboardheight, keyboardcolors from dooptions opts
 	import img, numframes, width from data
+
+	collectgarbage!
+	collectgarbage!
 
 	oneframe = width * linesperframe * 3
 	framelen = oneframe * visibleframes
 	ZERO = rep (char 0), framelen
 
 	getnotecolor = (note, frame) ->
-		offset = frame * oneframe + notewidth * note * 3 + 1
-		byte img, offset, offset + 2
+		img\get note*notewidth, frame*linesperframe
 
 	height = linesperframe * visibleframes + keyboardheight
 	fd = assert io.popen "ffmpeg -r 60 -pix_fmt rgb24 -s #{width}x#{height} -c:v rawvideo -f image2pipe -frame_size #{width*height*3} -i - -vf vflip '#{filename}'", 'w'
@@ -171,13 +189,18 @@ video = (data, opts, filename) ->
 			line = concat line
 			assert fd\write rep line, keyboardheight
 
-		frame = sub img, offset, offset + framelen - 1
+		frame = img\sub offset, framelen
 		assert fd\write frame
 		currlen = #frame
 		if currlen < framelen
 			pad = sub ZERO, currlen - framelen
 			assert fd\write pad
+
+		if i%1000 == 0
+			collectgarbage!
+			collectgarbage!
 	fd\close!
+	img\free! if freeimg
 
 	framelen = width * height * 3
 	{ :filename, :numframes, :width, :height, :framelen }
